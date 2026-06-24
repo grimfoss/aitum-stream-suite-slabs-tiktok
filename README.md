@@ -2,25 +2,31 @@
 
 OBS Studio plugin providing per-output stream management, extended from [Aitum Stream Suite](https://github.com/aitum-io/obs-aitum-stream-suite).
 
-## Added: Streamlabs TikTok Output
+## Requirements
 
-This fork adds a **Streamlabs TikTok** output type that:
+- **OBS Studio 31.1.0 or newer**
+- **A free Streamlabs account** that's connected to a TikTok account eligible for live streaming
 
-- Authenticates with Streamlabs via OAuth PKCE flow
-- Fetches a dynamic TikTok RTMP stream key from Streamlabs' internal API at stream start
-- Starts/ends the TikTok stream through the Streamlabs API
-- Provides category search with debounced auto-complete
-- Includes a manual "End TikTok Stream" button on the config page as a fallback
+## What This Does
+
+- **Log in with Streamlabs** — authenticates right from OBS using your browser
+- **Auto-fetches your TikTok stream key** — no more copying and pasting keys every time you go live
+- **Auto-starts your TikTok stream** when you hit "Start Streaming" in OBS
+- **Auto-ends your TikTok stream** when you stop — cleanup happens automatically
+- **Pick your stream category** — search and choose the game/category for your TikTok stream
+- **Manual "End Stream" button** — a fallback on the config page if you need to end a TikTok stream that didn't stop cleanly
+
+No need to leave OBS, no external tools, no manual key rotation.
 
 ### ⚠️ Disclaimer
 
-**This integration uses undocumented Streamlabs internal API endpoints** (`/api/v5/slobs/tiktok/*`). These endpoints are consumed by the official Streamlabs Desktop application and are **not a public API**. There is **no guarantee** they will remain stable. If Streamlabs changes or removes these endpoints, this plugin will stop working and there is little that can be done beyond finding a new approach.
+**This plugin uses undocumented Streamlabs internal API endpoints** (`/api/v5/slobs/tiktok/*`). These endpoints are consumed by the official Streamlabs Desktop application and are **not a public API**. There is **no guarantee** they will remain stable. If Streamlabs changes or removes these endpoints, this plugin will stop working and there is little that can be done beyond finding a new approach.
 
 Use at your own risk.
 
 ### Credits
 
-The OAuth PKCE flow and API interaction pattern are based on the work of **casuallyawaiting**'s [`StreamlabsTikTokStreamKeyGenerator.py`](https://github.com/casuallyawaiting/StreamlabsTikTokStreamKeyGenerator) Python script — thank you for reverse-engineering the flow.
+The OAuth PKCE flow and API interaction pattern are based on the work of **Loukious**'s [`StreamLabsTikTokStreamKeyGenerator`](https://github.com/Loukious/StreamLabsTikTokStreamKeyGenerator) Python script — thank you for reverse-engineering the flow.
 
 ## Building
 
@@ -38,12 +44,16 @@ The built plugin (`aitum-stream-suite.dll`) and locale file will be under `build
 
 ## Installation
 
-Copy to your OBS installation:
+### Manual
 
 | File | Destination |
 |------|-------------|
 | `build_x64/RelWithDebInfo/aitum-stream-suite.dll` | `C:\Program Files\obs-studio\obs-plugins\64bit\` |
 | `data/locale/en-US.ini` | `C:\Program Files\obs-studio\data\obs-plugins\aitum-stream-suite\locale\` |
+
+### Installer
+
+Download the latest `aitum-stream-suite-*-windows-installer.exe` from [Releases](https://github.com/grimfoss/obs-aitum-stream-suite/releases) and run it. The installer will detect your OBS installation and handle everything.
 
 ## License
 
