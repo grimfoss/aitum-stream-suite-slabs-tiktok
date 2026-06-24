@@ -1,6 +1,6 @@
 # Aitum Stream Suite — Streamlabs TikTok Fork
 
-OBS Studio plugin providing per-output stream management, extended from [Aitum Stream Suite](https://github.com/aitum-io/obs-aitum-stream-suite).
+OBS Studio plugin providing per-output stream management, forked from [Aitum Stream Suite](https://github.com/Aitum/obs-aitum-stream-suite).
 
 ## Requirements
 
