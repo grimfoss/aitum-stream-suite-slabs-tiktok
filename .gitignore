@@ -9,3 +9,5 @@ CMakeUserPresets.json
 cmake-build-*/
 __pycache__/
 *.pyc
+Output/
+*-manual-install.zip
