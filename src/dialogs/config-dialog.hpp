@@ -1,0 +1,123 @@
+#pragma once
+
+#include <QCheckBox>
+#include <QComboBox>
+#include <QDialog>
+#include <QMainWindow>
+#include <QTextEdit>
+#include <obs-frontend-api.h>
+#include <QGroupBox>
+#include <QListWidget>
+#include <QSpinBox>
+#include <QFormLayout>
+#include <QRadioButton>
+#include <QLabel>
+#include <QIcon>
+#include <QString>
+#include <QToolButton>
+#include <src/utils/widgets/hotkey-edit.hpp>
+
+class OBSBasicSettings : public QDialog {
+	Q_OBJECT
+	Q_PROPERTY(QIcon generalIcon READ GetGeneralIcon WRITE SetGeneralIcon DESIGNABLE true)
+	Q_PROPERTY(QIcon appearanceIcon READ GetAppearanceIcon WRITE SetAppearanceIcon DESIGNABLE true)
+	Q_PROPERTY(QIcon streamIcon READ GetStreamIcon WRITE SetStreamIcon DESIGNABLE true)
+	Q_PROPERTY(QIcon outputIcon READ GetOutputIcon WRITE SetOutputIcon DESIGNABLE true)
+	Q_PROPERTY(QIcon audioIcon READ GetAudioIcon WRITE SetAudioIcon DESIGNABLE true)
+	Q_PROPERTY(QIcon videoIcon READ GetVideoIcon WRITE SetVideoIcon DESIGNABLE true)
+	Q_PROPERTY(QIcon hotkeysIcon READ GetHotkeysIcon WRITE SetHotkeysIcon DESIGNABLE true)
+	Q_PROPERTY(QIcon accessibilityIcon READ GetAccessibilityIcon WRITE SetAccessibilityIcon DESIGNABLE true)
+	Q_PROPERTY(QIcon advancedIcon READ GetAdvancedIcon WRITE SetAdvancedIcon DESIGNABLE true)
+	Q_PROPERTY(QIcon helpIcon READ GetHelpIcon WRITE SetHelpIcon DESIGNABLE true)
+	Q_PROPERTY(QIcon canvasIcon READ GetCanvasIcon WRITE SetCanvasIcon DESIGNABLE true)
+	Q_PROPERTY(QIcon aitumIcon READ GetAitumIcon WRITE SetAitumIcon DESIGNABLE true)
+private:
+	QListWidget *listWidget;
+
+	QIcon GetGeneralIcon() const;
+	QIcon GetAppearanceIcon() const;
+	QIcon GetStreamIcon() const;
+	QIcon GetOutputIcon() const;
+	QIcon GetAudioIcon() const;
+	QIcon GetVideoIcon() const;
+	QIcon GetHotkeysIcon() const;
+	QIcon GetAccessibilityIcon() const;
+	QIcon GetAdvancedIcon() const;
+	QIcon GetHelpIcon() const;
+	QIcon GetCanvasIcon() const;
+	QIcon GetAitumIcon() const;
+
+	void AddCanvas(QFormLayout *canvasLayout, obs_data_t *settings, obs_data_array_t *canvas);
+	void AddUnmanagedCanvas(const std::string name);
+	void AddOutput(QFormLayout *outputsLayout, obs_data_t *settings, obs_data_array_t *outputs, bool isNew = false);
+	void AddVideoEncoderPage(QTabWidget *tabWidget, obs_data_t *output_settings, obs_data_array_t *outputs,
+				 QComboBox *canvasCombo, int idx);
+	void AddProperty(obs_properties_t *properties, obs_property_t *property, obs_data_t *settings, QFormLayout *layout);
+	void RefreshProperties(obs_properties_t *properties, QFormLayout *layout);
+	void AddCanvas();
+
+	void LoadOutputLayout(obs_data_t *settings, QFormLayout *outputLayout, obs_data_array_t *outputs,
+			      QToolButton *streaming_title, bool isNew);
+	bool UpdateVideoEncoderIndexCombo(QComboBox *videoEncoderIndex, obs_data_t *settings, obs_data_array_t *outputs);
+
+	obs_data_t *main_settings = nullptr;
+	obs_data_array_t *extra_outputs = nullptr;
+
+	std::map<obs_property_t *, QWidget *> encoder_property_widgets;
+	std::map<QWidget *, obs_properties_t *> video_encoder_properties;
+	std::map<QWidget *, obs_properties_t *> audio_encoder_properties;
+
+	std::vector<std::pair<QComboBox *, QString>> sourceCombos;
+
+	QFormLayout *canvasLayout;
+	QFormLayout *outputsLayout;
+	QLabel *newVersion;
+
+	QTextEdit *troubleshooterText;
+
+	QToolButton *generalCanvasButton;
+	QToolButton *generalOutputsButton;
+	QToolButton *generalHelpButton;
+	QToolButton *generalSupportAitumButton;
+
+	QCheckBox *mainStream;
+	QCheckBox *mainRecord;
+	QCheckBox *mainBacktrack;
+	QCheckBox *mainVirtualCam;
+
+	std::vector<OBSHotkeyWidget *> hotkeys;
+
+	void AddStream();
+	void AddRecord(bool backtrack);
+	void AddVirtualCam();
+	void AddFfmpeg();
+	void LoadSourceCombos();
+
+	obs_hotkey_t *GetHotkeyByName(const char *name);
+	std::vector<obs_key_combination_t> GetCombosForHotkey(obs_hotkey_id hotkey);
+
+private slots:
+	void SetGeneralIcon(const QIcon &icon);
+	void SetAppearanceIcon(const QIcon &icon);
+	void SetStreamIcon(const QIcon &icon);
+	void SetOutputIcon(const QIcon &icon);
+	void SetAudioIcon(const QIcon &icon);
+	void SetVideoIcon(const QIcon &icon);
+	void SetHotkeysIcon(const QIcon &icon);
+	void SetAccessibilityIcon(const QIcon &icon);
+	void SetAdvancedIcon(const QIcon &icon);
+	void SetHelpIcon(const QIcon &icon);
+	void SetCanvasIcon(const QIcon &icon);
+	void SetAitumIcon(const QIcon &icon);
+
+public:
+	OBSBasicSettings(QMainWindow *parent = nullptr);
+	~OBSBasicSettings();
+
+	void LoadSettings(obs_data_t *settings);
+	void SetNewerVersion(QString newer_version_available);
+	void ShowTab(int i);
+	void SetCreateType(const char *create_type);
+	void SaveHotkeys();
+public slots:
+};

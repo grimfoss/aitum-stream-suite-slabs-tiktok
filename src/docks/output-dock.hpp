@@ -1,0 +1,80 @@
+#pragma once
+
+#include <obs.h>
+#include <obs-frontend-api.h>
+#include <QCheckBox>
+#include <QFrame>
+#include <QGridLayout>
+#include <QLabel>
+#include <QPushButton>
+#include <QTimer>
+#include <src/utils/widgets/output-widget.hpp>
+
+class OutputDock : public QFrame {
+	Q_OBJECT
+
+private:
+	int outputPlatformIconSize = 36;
+	QVBoxLayout *mainLayout = nullptr;
+	QLabel *mainPlatformIconLabel = nullptr;
+	QPushButton *mainStreamButton = nullptr;
+	QPushButton *mainRecordButton = nullptr;
+	QPushButton *mainBacktrackCheckboxButton = nullptr;
+	QCheckBox *mainBacktrackCheckbox = nullptr;
+	QPushButton *mainBacktrackButton = nullptr;
+	QPushButton *mainVirtualCamButton = nullptr;
+	QFrame *mainStreamGroup = nullptr;
+	QFrame *mainRecordGroup = nullptr;
+	QFrame *mainBacktrackGroup = nullptr;
+	QFrame *mainVirtualCamGroup = nullptr;
+	QString mainPlatformUrl;
+	bool exiting = false;
+	bool mainStreamEnabled = true;
+	bool mainRecordEnabled = true;
+	bool mainBacktrackEnabled = true;
+	bool mainVirtualCamEnabled = true;
+	QDateTime mainStreamStartTime;
+	QDateTime mainRecordStartTime;
+	QDateTime mainBacktrackStartTime;
+	QDateTime mainVirtualCamStartTime;
+
+	QTimer videoCheckTimer;
+
+	std::vector<OutputWidget *> outputWidgets;
+
+	std::list<std::function<bool(std::function<void()>)>> outputsToStart;
+	size_t outputStarting = 0;
+
+	obs_hotkey_pair_id StartStopHotkey = OBS_INVALID_HOTKEY_PAIR_ID;
+	obs_hotkey_id StartStreamHotkey = OBS_INVALID_HOTKEY_ID;
+	obs_hotkey_id StartRecordHotkey = OBS_INVALID_HOTKEY_ID;
+
+	std::function<void()> mainStreamOnStarted;
+	std::function<void()> mainRecordOnStarted;
+	std::function<void()> mainBacktrackOnStarted;
+	std::function<void()> mainVirtualCamOnStarted;
+
+	static void frontend_event(enum obs_frontend_event event, void *private_data);
+
+private slots:
+	void StartAll(bool streamOnly, bool recordOnly);
+	void StopAll(bool streamOnly, bool recordOnly);
+	void StartNextOutput();
+
+public:
+	OutputDock(QWidget *parent = nullptr);
+	~OutputDock();
+
+	obs_data_array_t *GetOutputsArray();
+
+	void Exiting() { exiting = true; }
+	void LoadSettings();
+	void SaveSettings();
+	bool AddChapterToOutput(const char *output_name, const char *chapter_name);
+
+public slots:
+	void UpdateMainStreamStatus(bool active);
+	void UpdateMainRecordingStatus(bool active);
+	void UpdateMainBacktrackStatus(bool active);
+	void UpdateMainVirtualCameraStatus(bool active);
+};

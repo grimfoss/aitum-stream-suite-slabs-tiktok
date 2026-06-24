@@ -1,0 +1,11 @@
+build_x64/
+build_x86/
+.deps/
+*.user
+*.suo
+*.sdf
+.vs/
+CMakeUserPresets.json
+cmake-build-*/
+__pycache__/
+*.pyc

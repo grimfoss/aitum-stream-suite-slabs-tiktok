@@ -1,0 +1,1211 @@
+#include "../utils/icon.hpp"
+#include "canvas-clone-dock.hpp"
+#include "canvas-dock.hpp"
+#include <obs-module.h>
+#include <QGroupBox>
+#include <QGuiApplication>
+#include <QLabel>
+#include <QLayout>
+#include <QMenu>
+#include <QScrollArea>
+#include <src/utils/color.hpp>
+#include <src/utils/widgets/switching-splitter.hpp>
+
+std::list<CanvasCloneDock *> canvas_clone_docks;
+extern std::list<CanvasDock *> canvas_docks;
+extern QTabBar *modesTabBar;
+
+extern bool WindowPositionValid(QRect rect);
+
+CanvasCloneDock::CanvasCloneDock(obs_data_t *settings_, QWidget *parent)
+	: QFrame(parent),
+	  preview(new OBSQTDisplay(this)),
+	  settings(settings_)
+{
+	pthread_mutex_init(&replace_sources_mutex, nullptr);
+	obs_enter_graphics();
+
+	gs_render_start(true);
+	gs_vertex2f(0.0f, 0.0f);
+	gs_vertex2f(0.0f, 1.0f);
+	gs_vertex2f(1.0f, 0.0f);
+	gs_vertex2f(1.0f, 1.0f);
+	box = gs_render_save();
+
+	obs_leave_graphics();
+
+	canvas_split = new SwitchingSplitter;
+	canvas_split->setContentsMargins(0, 0, 0, 0);
+
+	auto c = color_from_int(obs_data_get_int(settings, "color"));
+	setStyleSheet(QString("QFrame{border: 2px solid %1;}").arg(c.name(QColor::HexRgb)));
+
+	auto l = new QBoxLayout(QBoxLayout::TopToBottom, this);
+	l->setContentsMargins(0, 0, 0, 0);
+	setLayout(l);
+	//l->addWidget(preview);
+	l->addWidget(canvas_split);
+	canvas_split->setOrientation(Qt::Vertical);
+	canvas_split->addWidget(preview);
+
+	auto replaceGroup = new QGroupBox(QString::fromUtf8(obs_module_text("Replace")));
+	replaceGroup->setObjectName(QStringLiteral("replaceGroup"));
+	replaceGroup->setContentsMargins(0, 0, 0, 0);
+
+	auto scroll = new QScrollArea;
+	auto replaceWidget = new QFrame;
+	replaceWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+	scroll->setWidget(replaceWidget);
+	scroll->setWidgetResizable(true);
+	scroll->setLineWidth(0);
+	scroll->setFrameShape(QFrame::NoFrame);
+
+	replaceGroup->setLayout(new QBoxLayout(QBoxLayout::TopToBottom));
+	replaceGroup->layout()->setContentsMargins(0, 0, 0, 0);
+	replaceGroup->layout()->addWidget(scroll);
+
+	auto replaceGroupLayout = new QGridLayout();
+	replaceGroupLayout->setContentsMargins(0, 0, 0, 0);
+	replaceGroupLayout->setSpacing(0);
+	replaceWidget->setLayout(replaceGroupLayout);
+
+	replaceGroupLayout->addWidget(new QLabel(QString::fromUtf8(obs_module_text("CanvasCloneReplace"))), 0, 0);
+	replaceGroupLayout->addWidget(new QLabel(QString::fromUtf8(obs_module_text("CanvasCloneReplacement"))), 0, 1);
+
+	for (int i = 0; i < 5; i++) {
+		auto sourceCombo = new QComboBox;
+		sourceCombo->setEditable(true);
+		sourceCombo->insertItem(0, "");
+
+		connect(sourceCombo, &QComboBox::editTextChanged, [this, sourceCombo, i] {
+			auto text = sourceCombo->currentText().trimmed();
+			auto arr = obs_data_get_array(settings, "replace_sources");
+			auto item = obs_data_array_item(arr, i);
+			if (!item) {
+				item = obs_data_create();
+				obs_data_array_push_back(arr, item);
+			} else if (strcmp(obs_data_get_string(item, "source"), text.toUtf8().constData()) == 0) {
+			} else {
+				obs_data_set_string(item, "source", text.toUtf8().constData());
+				LoadReplacements();
+			}
+			obs_data_release(item);
+			obs_data_array_release(arr);
+		});
+
+		auto replaceCombo = new QComboBox;
+		replaceCombo->setEditable(true);
+		replaceCombo->insertItem(0, "");
+
+		connect(replaceCombo, &QComboBox::editTextChanged, [this, replaceCombo, i] {
+			auto text = replaceCombo->currentText().trimmed();
+			auto arr = obs_data_get_array(settings, "replace_sources");
+			auto item = obs_data_array_item(arr, i);
+			if (!item) {
+				item = obs_data_create();
+				obs_data_array_push_back(arr, item);
+			} else if (strcmp(obs_data_get_string(item, "replacement"), text.toUtf8().constData()) == 0) {
+			} else {
+				obs_data_set_string(item, "replacement", text.toUtf8().constData());
+				LoadReplacements();
+			}
+			obs_data_release(item);
+			obs_data_array_release(arr);
+		});
+		replaceGroupLayout->addWidget(sourceCombo, i + 1, 0);
+		replaceGroupLayout->addWidget(replaceCombo, i + 1, 1);
+
+		replaceCombos.push_back(std::make_pair(sourceCombo, replaceCombo));
+	}
+	obs_enum_sources(AddSourceToCombos, this);
+
+	canvas_split->addWidget(replaceGroup);
+
+	preview->setObjectName(QStringLiteral("preview"));
+	preview->setMinimumSize(QSize(24, 24));
+	QSizePolicy sizePolicy1(QSizePolicy::Expanding, QSizePolicy::Expanding);
+	sizePolicy1.setHorizontalStretch(0);
+	sizePolicy1.setVerticalStretch(0);
+	sizePolicy1.setHeightForWidth(preview->sizePolicy().hasHeightForWidth());
+	preview->setSizePolicy(sizePolicy1);
+
+	preview->show();
+	connect(preview, &OBSQTDisplay::DisplayCreated,
+		[this]() { obs_display_add_draw_callback(preview->GetDisplay(), DrawPreview, this); });
+
+	preview->setContextMenuPolicy(Qt::CustomContextMenu);
+	QObject::connect(preview, &OBSQTDisplay::customContextMenuRequested, [this] {
+		QMenu menu(this);
+		auto projectorMenu = menu.addMenu(QString::fromUtf8(obs_frontend_get_locale_string("Projector.Open.Preview")));
+		AddProjectorMenuMonitors(projectorMenu, this, SLOT(OpenPreviewProjector()));
+		menu.addAction(QString::fromUtf8(obs_frontend_get_locale_string("Projector.Window")),
+			       [this] { OpenProjector(-1); });
+		menu.addAction(GetIconFromType(OBS_ICON_TYPE_IMAGE),
+			       QString::fromUtf8(obs_frontend_get_locale_string("Screenshot")), this, [this] {
+				       auto source = obs_canvas_get_channel(canvas, 0);
+				       if (source) {
+					       obs_frontend_take_source_screenshot(source);
+					       obs_source_release(source);
+				       }
+			       });
+		menu.exec(QCursor::pos());
+	});
+
+	canvas_width = (uint32_t)obs_data_get_int(settings, "width");
+	canvas_height = (uint32_t)obs_data_get_int(settings, "height");
+
+	auto clone_name = obs_data_get_string(settings, "clone");
+	auto clone_canvas = clone_name[0] == '\0' ? obs_get_main_canvas() : obs_get_canvas_by_name(clone_name);
+	if (clone_canvas) {
+		clone = obs_canvas_get_weak_canvas(clone_canvas);
+		obs_canvas_enum_scenes(clone_canvas, AddSourceToCombos, this);
+		obs_video_info ovi;
+		if (obs_canvas_get_video_info(clone_canvas, &ovi)) {
+			if (ovi.base_width > 0)
+				canvas_width = ovi.base_width;
+			if (ovi.base_height > 0)
+				canvas_height = ovi.base_height;
+		} else {
+			for (const auto &it : canvas_docks) {
+				if (it->GetCanvas() == clone_canvas) {
+					canvas_width = it->GetCanvasWidth();
+					canvas_height = it->GetCanvasHeight();
+				}
+			}
+			for (const auto &it : canvas_clone_docks) {
+				if (it->GetCanvas() == clone_canvas) {
+					canvas_width = it->GetCanvasWidth();
+					canvas_height = it->GetCanvasHeight();
+				}
+			}
+		}
+		obs_canvas_release(clone_canvas);
+	}
+	if (canvas_width < 1)
+		canvas_width = 1080;
+	if (canvas_height < 1)
+		canvas_height = 1920;
+
+	std::string canvas_name = obs_data_get_string(settings, "name");
+	if (canvas_name.empty())
+		canvas_name = "Clone";
+
+	canvas = obs_get_canvas_by_name(canvas_name.c_str());
+	if (canvas && obs_canvas_removed(canvas)) {
+		obs_canvas_release(canvas);
+		canvas = nullptr;
+	} else if (canvas && obs_canvas_get_flags(canvas) != (ACTIVATE | SCENE_REF | EPHEMERAL)) {
+		obs_frontend_remove_canvas(canvas);
+		obs_canvas_remove(canvas);
+		obs_canvas_release(canvas);
+		canvas = nullptr;
+	}
+	if (!canvas) {
+		canvas = obs_get_canvas_by_uuid(obs_data_get_string(settings, "uuid"));
+		if (canvas) {
+			if (obs_canvas_removed(canvas)) {
+				obs_canvas_release(canvas);
+				canvas = nullptr;
+			} else if (obs_canvas_get_flags(canvas) != (ACTIVATE | SCENE_REF | EPHEMERAL)) {
+				obs_frontend_remove_canvas(canvas);
+				obs_canvas_remove(canvas);
+				obs_canvas_release(canvas);
+				canvas = nullptr;
+			} else {
+				std::string name = obs_canvas_get_name(canvas);
+				if (name != canvas_name) {
+					obs_canvas_set_name(canvas, canvas_name.c_str());
+				}
+			}
+		}
+	}
+	if (canvas) {
+		obs_video_info ovi;
+		if (!obs_canvas_get_video_info(canvas, &ovi) ||
+		    (ovi.base_width != canvas_width || ovi.base_height != canvas_height || ovi.output_width != canvas_width ||
+		     ovi.output_height != canvas_height)) {
+			obs_get_video_info(&ovi);
+			ovi.base_height = canvas_height;
+			ovi.base_width = canvas_width;
+			ovi.output_height = canvas_height;
+			ovi.output_width = canvas_width;
+			obs_canvas_reset_video(canvas, &ovi);
+			blog(LOG_INFO, "[Aitum Stream Suite] Canvas '%s' reset video %ux%u", canvas_name.c_str(), canvas_width,
+			     canvas_height);
+		}
+		if (strcmp(obs_data_get_string(settings, "uuid"), "") == 0) {
+			obs_data_set_string(settings, "uuid", obs_canvas_get_uuid(canvas));
+		}
+	} else {
+		obs_video_info ovi;
+		obs_get_video_info(&ovi);
+		ovi.base_height = canvas_height;
+		ovi.base_width = canvas_width;
+		ovi.output_height = canvas_height;
+		ovi.output_width = canvas_width;
+		canvas = obs_frontend_add_canvas(canvas_name.c_str(), &ovi, ACTIVATE | SCENE_REF | EPHEMERAL);
+		blog(LOG_INFO, "[Aitum Stream Suite] Add frontend canvas '%s' %ux%u", canvas_name.c_str(), canvas_width,
+		     canvas_height);
+		if (canvas) {
+			obs_data_set_string(settings, "uuid", obs_canvas_get_uuid(canvas));
+			obs_data_set_int(settings, "width", canvas_width);
+			obs_data_set_int(settings, "height", canvas_height);
+		}
+	}
+	LoadReplacements();
+
+	obs_add_tick_callback(Tick, this);
+
+	auto sh = obs_get_signal_handler();
+	signal_handler_connect(sh, "source_create", source_create, this);
+	signal_handler_connect(sh, "source_remove", source_remove, this);
+	signal_handler_connect(sh, "source_rename", source_rename, this);
+
+	if (modesTabBar) {
+		auto index = modesTabBar->currentIndex();
+		if (index >= 0) {
+			auto d = modesTabBar->tabData(index);
+			if (!d.isNull() && d.isValid() && !d.toString().isEmpty()) {
+				LoadMode(d.toString());
+			} else {
+				LoadMode(modesTabBar->tabText(index));
+			}
+		}
+	}
+
+	auto pa = obs_data_get_array(settings, "projectors");
+	auto count = obs_data_array_count(pa);
+	for (size_t i = 0; i < count; i++) {
+		auto p = obs_data_array_item(pa, i);
+		if (!p)
+			continue;
+
+		auto monitor = obs_data_get_int(p, "monitor");
+		OBSProjector *projector =
+			new OBSProjector(canvas, nullptr, monitor, [this](OBSProjector *p) { DeleteProjector(p); });
+
+		auto g = obs_data_get_string(p, "geometry");
+		if (g[0] != '\0' && monitor < 0) {
+			QByteArray byteArray = QByteArray::fromBase64(QByteArray(g));
+			projector->restoreGeometry(byteArray);
+
+			if (!WindowPositionValid(projector->normalGeometry())) {
+				QRect rect = QGuiApplication::primaryScreen()->geometry();
+				projector->setGeometry(QStyle::alignedRect(Qt::LeftToRight, Qt::AlignCenter, size(), rect));
+			}
+
+			if (obs_data_get_bool(p, "alwaysOnTopOverridden"))
+				projector->SetIsAlwaysOnTop(obs_data_get_bool(p, "alwaysOnTop"), true);
+		}
+		projectors.emplace_back(projector);
+		obs_data_release(p);
+	}
+	obs_data_array_release(pa);
+}
+
+CanvasCloneDock::~CanvasCloneDock()
+{
+	for (auto projector : projectors) {
+		delete projector;
+	}
+	auto sh = obs_get_signal_handler();
+	signal_handler_disconnect(sh, "source_create", source_create, this);
+	signal_handler_disconnect(sh, "source_remove", source_remove, this);
+	signal_handler_disconnect(sh, "source_rename", source_rename, this);
+	canvas_clone_docks.remove(this);
+	obs_remove_tick_callback(Tick, this);
+	obs_data_release(settings);
+	obs_weak_canvas_release(clone);
+	obs_frontend_remove_canvas(canvas);
+	obs_canvas_remove(canvas);
+	obs_canvas_release(canvas);
+	obs_enter_graphics();
+	gs_vertexbuffer_destroy(box);
+	obs_leave_graphics();
+	pthread_mutex_lock(&replace_sources_mutex);
+	for (auto it = replace_sources.begin(); it != replace_sources.end(); it++)
+		obs_weak_source_release(it->second);
+	replace_sources.clear();
+	pthread_mutex_unlock(&replace_sources_mutex);
+	pthread_mutex_destroy(&replace_sources_mutex);
+}
+
+void CanvasCloneDock::DrawPreview(void *data, uint32_t cx, uint32_t cy)
+{
+	CanvasCloneDock *window = static_cast<CanvasCloneDock *>(data);
+	if (!window || !window->canvas || obs_canvas_removed(window->canvas))
+		return;
+
+	uint32_t sourceCX = window->canvas_width;
+	if (sourceCX <= 0)
+		sourceCX = 1;
+	uint32_t sourceCY = window->canvas_height;
+	if (sourceCY <= 0)
+		sourceCY = 1;
+
+	int x, y;
+	float scale;
+
+	CanvasDock::GetScaleAndCenterPos(sourceCX, sourceCY, cx, cy, x, y, scale);
+	//if (window->previewScale != scale)
+	//	window->previewScale = scale;
+	auto newCX = scale * float(sourceCX);
+	auto newCY = scale * float(sourceCY);
+
+	auto extraCx = (window->zoom - 1.0f) * newCX;
+	auto extraCy = (window->zoom - 1.0f) * newCY;
+	int newCx = newCX * window->zoom;
+	int newCy = newCY * window->zoom;
+	x -= extraCx * window->scrollX;
+	y -= extraCy * window->scrollY;
+
+	gs_viewport_push();
+	gs_projection_push();
+
+	gs_ortho(0.0f, newCx, 0.0f, newCy, -100.0f, 100.0f);
+	gs_set_viewport(x, y, newCx, newCy);
+	window->DrawBackdrop(newCx, newCy);
+
+	const bool previous = gs_set_linear_srgb(true);
+
+	gs_ortho(0.0f, float(sourceCX), 0.0f, float(sourceCY), -100.0f, 100.0f);
+	gs_set_viewport(x, y, (int)newCX, (int)newCY);
+	obs_canvas_render(window->canvas);
+
+	gs_set_linear_srgb(previous);
+
+	gs_ortho(float(-x), newCX + float(x), float(-y), newCY + float(y), -100.0f, 100.0f);
+	gs_reset_viewport();
+
+	gs_projection_pop();
+	gs_viewport_pop();
+}
+
+void CanvasCloneDock::Tick(void *data, float seconds)
+{
+	UNUSED_PARAMETER(seconds);
+	CanvasCloneDock *ccd = static_cast<CanvasCloneDock *>(data);
+	if (!ccd->clone) {
+		auto clone_name = obs_data_get_string(ccd->settings, "clone");
+		auto clone_canvas = clone_name[0] == '\0' ? obs_get_main_canvas() : obs_get_canvas_by_name(clone_name);
+		if (clone_canvas) {
+			ccd->clone = obs_canvas_get_weak_canvas(clone_canvas);
+			obs_video_info ovi;
+			if (obs_canvas_get_video_info(clone_canvas, &ovi)) {
+				if (ovi.base_width > 0)
+					ccd->canvas_width = ovi.base_width;
+				if (ovi.base_height > 0)
+					ccd->canvas_height = ovi.base_height;
+			}
+			obs_canvas_release(clone_canvas);
+		}
+	}
+	if (!ccd->clone)
+		return;
+	obs_canvas_t *c = obs_weak_canvas_get_canvas(ccd->clone);
+	if (!c)
+		return;
+	if (c == ccd->canvas) {
+		obs_canvas_release(c);
+		return;
+	}
+	obs_video_info ovi;
+	if (obs_canvas_get_video_info(c, &ovi)) {
+		if (ovi.base_width > 0 && ccd->canvas_width != ovi.base_width)
+			ccd->canvas_width = ovi.base_width;
+		if (ovi.base_height > 0 && ccd->canvas_height != ovi.base_height)
+			ccd->canvas_height = ovi.base_height;
+	} else {
+		for (const auto &it : canvas_docks) {
+			if (it->GetCanvas() == c) {
+				ccd->canvas_width = it->GetCanvasWidth();
+				ccd->canvas_height = it->GetCanvasHeight();
+			}
+		}
+		for (const auto &it : canvas_clone_docks) {
+			if (it->GetCanvas() == c) {
+				ccd->canvas_width = it->GetCanvasWidth();
+				ccd->canvas_height = it->GetCanvasHeight();
+			}
+		}
+	}
+	if (obs_canvas_get_video_info(ccd->canvas, &ovi)) {
+		if (ovi.base_width != ccd->canvas_width || ovi.base_height != ccd->canvas_height ||
+		    ovi.output_width != ccd->canvas_width || ovi.output_height != ccd->canvas_height) {
+			obs_get_video_info(&ovi);
+			ovi.base_height = ccd->canvas_height;
+			ovi.base_width = ccd->canvas_width;
+			ovi.output_height = ccd->canvas_height;
+			ovi.output_width = ccd->canvas_width;
+			obs_canvas_reset_video(ccd->canvas, &ovi);
+			blog(LOG_INFO, "[Aitum Stream Suite] Canvas '%s' reset video %ux%u", obs_canvas_get_name(ccd->canvas),
+			     ccd->canvas_width, ccd->canvas_height);
+		}
+	}
+	for (int i = 0; i < MAX_CHANNELS; i++) {
+		obs_source_t *s = obs_canvas_get_channel(c, i);
+		obs_source_t *s2 = obs_canvas_get_channel(ccd->canvas, i);
+		if (!s && !s2)
+			continue;
+		if (s2 && !s) {
+			obs_canvas_set_channel(ccd->canvas, i, nullptr);
+			obs_source_release(s2);
+			continue;
+		}
+
+		obs_source_t *s3 = ccd->DuplicateSource(s, s2);
+		if (s3 != s2) {
+			obs_canvas_set_channel(ccd->canvas, i, s3);
+		}
+		obs_source_release(s);
+		obs_source_release(s2);
+		obs_source_release(s3);
+	}
+
+	obs_canvas_release(c);
+}
+
+void CanvasCloneDock::DrawBackdrop(float cx, float cy)
+{
+	if (!box)
+		return;
+
+	GS_DEBUG_MARKER_BEGIN(GS_DEBUG_COLOR_DEFAULT, "DrawBackdrop");
+
+	gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
+	gs_eparam_t *color = gs_effect_get_param_by_name(solid, "color");
+	gs_technique_t *tech = gs_effect_get_technique(solid, "Solid");
+
+	vec4 colorVal;
+	vec4_set(&colorVal, 0.0f, 0.0f, 0.0f, 1.0f);
+	gs_effect_set_vec4(color, &colorVal);
+
+	gs_technique_begin(tech);
+	gs_technique_begin_pass(tech, 0);
+	gs_matrix_push();
+	gs_matrix_identity();
+	gs_matrix_scale3f(float(cx), float(cy), 1.0f);
+
+	gs_load_vertexbuffer(box);
+	gs_draw(GS_TRISTRIP, 0, 0);
+
+	gs_matrix_pop();
+	gs_technique_end_pass(tech);
+	gs_technique_end(tech);
+
+	gs_load_vertexbuffer(nullptr);
+
+	GS_DEBUG_MARKER_END();
+}
+
+void CanvasCloneDock::SceneDetectReplacedSource(obs_sceneitem_t *item, bool *change_source)
+{
+	obs_source_t *source = obs_sceneitem_get_source(item);
+	pthread_mutex_lock(&replace_sources_mutex);
+	if (replace_sources.find(source) != replace_sources.end()) {
+		pthread_mutex_unlock(&replace_sources_mutex);
+		*change_source = true;
+		return;
+	}
+	pthread_mutex_unlock(&replace_sources_mutex);
+	obs_scene_t *scene = obs_scene_from_source(source);
+	if (!scene)
+		scene = obs_group_from_source(source);
+	if (scene) {
+		std::list<obs_sceneitem_t *> items;
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *scene, obs_sceneitem_t *item, void *param) {
+				UNUSED_PARAMETER(scene);
+				auto items = (std::list<obs_sceneitem_t *> *)param;
+				obs_sceneitem_addref(item);
+				items->push_back(item);
+				return true;
+			},
+			&items);
+		for (auto &item2 : items) {
+			if (!*change_source)
+				SceneDetectReplacedSource(item2, change_source);
+			obs_sceneitem_release(item2);
+		}
+	}
+}
+
+obs_source_t *CanvasCloneDock::DuplicateSource(obs_source_t *source, obs_source_t *current)
+{
+	if (!source)
+		return nullptr;
+
+	const char *source_name = obs_source_get_name(source);
+
+	pthread_mutex_lock(&replace_sources_mutex);
+	if (obs_obj_is_private(source) && source_name) {
+		for (auto it : replace_sources) {
+			const char *replace_name = obs_source_get_name(it.first);
+			if (replace_name && strcmp(source_name, replace_name) == 0) {
+				obs_source_t *s = obs_weak_source_get_source(it.second);
+				if (s) {
+					source = s;
+					obs_source_release(s);
+					source_name = obs_source_get_name(source);
+					break;
+				}
+			}
+		}
+	} else {
+		auto replace = replace_sources.find(source);
+		if (replace != replace_sources.end()) {
+			obs_source_t *s = obs_weak_source_get_source(replace->second);
+			if (s) {
+				source = s;
+				obs_source_release(s);
+				source_name = obs_source_get_name(source);
+			}
+		}
+	}
+	pthread_mutex_unlock(&replace_sources_mutex);
+
+	obs_source_t *duplicate = nullptr;
+
+	enum obs_source_type source_type = obs_source_get_type(source);
+	if (source_type == OBS_SOURCE_TYPE_TRANSITION) {
+		if ((current && !source) || (source && !current) ||
+		    (source && current && strcmp(obs_source_get_name(current), source_name) != 0)) {
+			for (auto cached : transition_cache) {
+				if (strcmp(obs_source_get_name(cached), source_name) != 0)
+					continue;
+				duplicate = obs_source_get_ref(cached);
+				if (!duplicate)
+					continue;
+				OBSDataAutoRelease origSettings = obs_source_get_settings(source);
+				OBSDataAutoRelease dupSettings = obs_source_get_settings(duplicate);
+				std::string origSettingsJson = obs_data_get_json(origSettings);
+				std::string dupSettingsJson = obs_data_get_json(dupSettings);
+				if (origSettingsJson != dupSettingsJson) {
+					obs_source_update(duplicate, origSettings);
+				}
+				break;
+			}
+			if (!duplicate) {
+				duplicate = obs_source_duplicate(source, source_name, true);
+				transition_cache.push_back(duplicate);
+				if (transition_cache.size() > 25)
+					transition_cache.pop_front();
+			}
+
+			obs_transition_set_size(duplicate, obs_source_get_width(source), obs_source_get_height(source));
+			obs_transition_set_alignment(duplicate, obs_transition_get_alignment(source));
+			obs_transition_set_scale_type(duplicate, obs_transition_get_scale_type(source));
+		} else {
+			duplicate = obs_source_get_ref(current);
+		}
+		obs_source_t *sa = obs_transition_get_source(source, OBS_TRANSITION_SOURCE_A);
+		obs_source_t *sa2 = obs_transition_get_source(duplicate, OBS_TRANSITION_SOURCE_A);
+		obs_source_t *sa3 = DuplicateSource(sa, sa2);
+		obs_source_t *sb = obs_transition_get_source(source, OBS_TRANSITION_SOURCE_B);
+		obs_source_t *sb2 = obs_transition_get_source(duplicate, OBS_TRANSITION_SOURCE_B);
+		obs_source_t *sb3 = DuplicateSource(sb, sb2);
+		if (sa3 != sa2) {
+			obs_transition_set(duplicate, sa3);
+		}
+		if (sb3 && sb3 != sb2) {
+			obs_transition_start(duplicate,
+					     obs_transition_fixed(source) ? OBS_TRANSITION_MODE_AUTO : OBS_TRANSITION_MODE_MANUAL,
+					     obs_frontend_get_transition_duration(), sb3);
+		}
+
+		if (!obs_transition_fixed(source))
+			obs_transition_set_manual_time(duplicate, obs_transition_get_time(source));
+		obs_source_release(sa);
+		obs_source_release(sa2);
+		obs_source_release(sa3);
+		obs_source_release(sb);
+		obs_source_release(sb2);
+		obs_source_release(sb3);
+	} else if (source_type == OBS_SOURCE_TYPE_SCENE) {
+		obs_scene_t *scene = obs_scene_from_source(source);
+		if (!scene)
+			scene = obs_group_from_source(source);
+
+		std::list<obs_sceneitem_t *> items;
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *scene, obs_sceneitem_t *item, void *param) {
+				UNUSED_PARAMETER(scene);
+				auto items = (std::list<obs_sceneitem_t *> *)param;
+				obs_sceneitem_addref(item);
+				items->push_back(item);
+				return true;
+			},
+			&items);
+		bool change_source = false;
+		for (auto &item : items) {
+			if (!change_source)
+				SceneDetectReplacedSource(item, &change_source);
+			obs_sceneitem_release(item);
+		}
+		if (!change_source) {
+			duplicate = obs_source_get_ref(source);
+		} else if (current && source &&
+			   ((!change_source && current == source) ||
+			    (current != source && strcmp(obs_source_get_name(current), source_name) == 0))) {
+			duplicate = obs_source_get_ref(current);
+		} else {
+			for (auto cached : scene_cache) {
+				if (strcmp(obs_source_get_name(cached), source_name) == 0) {
+					duplicate = obs_source_get_ref(cached);
+					break;
+				}
+			}
+			if (!duplicate) {
+				//duplicate = obs_source_duplicate(source, source_name, true);
+				duplicate =
+					obs_scene_get_source(obs_scene_duplicate(scene, source_name, OBS_SCENE_DUP_PRIVATE_REFS));
+				scene_cache.push_back(duplicate);
+				if (scene_cache.size() > 50)
+					scene_cache.pop_front();
+			}
+			auto cx = obs_source_get_base_width(source);
+			auto cy = obs_source_get_base_height(source);
+			if (cx && cy &&
+			    (cx != obs_source_get_base_width(duplicate) || cy != obs_source_get_base_height(duplicate))) {
+				obs_source_save(duplicate);
+				auto ss = obs_source_get_settings(duplicate);
+				obs_data_set_bool(ss, "custom_size", true);
+				obs_data_set_int(ss, "cx", cx);
+				obs_data_set_int(ss, "cy", cy);
+				obs_data_release(ss);
+				obs_source_load(duplicate);
+			}
+		}
+		if (duplicate != source) {
+			obs_scene_t *scene2 = obs_scene_from_source(duplicate);
+			if (!scene2)
+				scene2 = obs_group_from_source(duplicate);
+			if (!scene2) {
+				return nullptr;
+			}
+
+			std::list<obs_sceneitem_t *> items;
+			obs_scene_enum_items(
+				scene2,
+				[](obs_scene_t *scene, obs_sceneitem_t *item, void *param) {
+					UNUSED_PARAMETER(scene);
+					auto items = (std::list<obs_sceneitem_t *> *)param;
+					obs_sceneitem_addref(item);
+					items->push_back(item);
+					return true;
+				},
+				&items);
+			for (auto &item : items) {
+				auto source = obs_sceneitem_get_source(item);
+				auto source_name = obs_source_get_name(source);
+				if (!obs_scene_find_source(scene, source_name)) {
+					//item not found in original scene
+					bool found = false;
+					pthread_mutex_lock(&replace_sources_mutex);
+					for (auto it = replace_sources.begin(); !found && it != replace_sources.end(); it++) {
+						if (obs_weak_source_references_source(it->second, source) &&
+						    obs_scene_find_source(scene, obs_source_get_name(it->first)))
+							found = true;
+					}
+					pthread_mutex_unlock(&replace_sources_mutex);
+					if (!found)
+						obs_sceneitem_remove(item);
+				}
+				obs_sceneitem_release(item);
+			}
+			items.clear();
+
+			obs_scene_enum_items(
+				scene,
+				[](obs_scene_t *scene, obs_sceneitem_t *item, void *param) {
+					UNUSED_PARAMETER(scene);
+					auto items = (std::list<obs_sceneitem_t *> *)param;
+					obs_sceneitem_addref(item);
+					items->push_back(item);
+					return true;
+				},
+				&items);
+			for (auto &item : items) {
+				obs_sceneitem_t *item2 =
+					obs_scene_find_source(scene2, obs_source_get_name(obs_sceneitem_get_source(item)));
+				obs_sceneitem_t *item3 = nullptr;
+				obs_source_t *source = obs_sceneitem_get_source(item);
+				obs_source_t *source2 = obs_sceneitem_get_source(item2);
+				obs_source_t *source3 = DuplicateSource(source, source2);
+				if (!item2) {
+					item2 = obs_scene_find_source(scene2, obs_source_get_name(source3));
+					source2 = obs_sceneitem_get_source(item2);
+				}
+				if (source2 && source3 != source2) {
+					obs_sceneitem_remove(item2);
+					item3 = obs_scene_add(scene2, source3);
+				} else if (!item2) {
+					item3 = obs_scene_add(scene2, source3);
+				} else {
+					item3 = item2;
+				}
+				DuplicateSceneItem(item, item3);
+				obs_source_release(source3);
+				obs_sceneitem_release(item);
+			}
+		}
+	} else {
+		duplicate = obs_source_get_ref(source);
+	}
+
+	return duplicate;
+}
+
+void CanvasCloneDock::DuplicateSceneItem(obs_sceneitem_t *item, obs_sceneitem_t *item2)
+{
+	if (!item || !item2)
+		return;
+	struct obs_transform_info transform;
+	struct obs_transform_info transform2;
+	obs_sceneitem_get_info2(item, &transform);
+	obs_sceneitem_get_info2(item2, &transform2);
+	if (memcmp(&transform, &transform2, sizeof(struct obs_transform_info)) != 0) {
+		obs_sceneitem_set_info2(item2, &transform);
+	}
+	struct obs_sceneitem_crop crop;
+	struct obs_sceneitem_crop crop2;
+	obs_sceneitem_get_crop(item, &crop);
+	obs_sceneitem_get_crop(item2, &crop2);
+	if (memcmp(&crop, &crop2, sizeof(struct obs_sceneitem_crop)) != 0) {
+		obs_sceneitem_set_crop(item2, &crop);
+	}
+	enum obs_blending_method blend_method = obs_sceneitem_get_blending_method(item);
+	enum obs_blending_method blend_method2 = obs_sceneitem_get_blending_method(item2);
+	if (blend_method != blend_method2)
+		obs_sceneitem_set_blending_method(item, blend_method);
+
+	enum obs_blending_type blending_type = obs_sceneitem_get_blending_mode(item);
+	enum obs_blending_type blending_type2 = obs_sceneitem_get_blending_mode(item2);
+	if (blending_type != blending_type2)
+		obs_sceneitem_set_blending_mode(item2, blending_type);
+
+	bool visible = obs_sceneitem_visible(item);
+	bool visible2 = obs_sceneitem_visible(item2);
+	if (visible != visible2)
+		obs_sceneitem_set_visible(item2, visible);
+
+	enum obs_scale_type scale_type = obs_sceneitem_get_scale_filter(item);
+	enum obs_scale_type scale_type2 = obs_sceneitem_get_scale_filter(item2);
+	if (scale_type != scale_type2)
+		obs_sceneitem_set_scale_filter(item2, scale_type);
+
+	obs_source_t *show_transition = obs_sceneitem_get_transition(item, true);
+	obs_source_t *show_transition2 = obs_sceneitem_get_transition(item2, true);
+	obs_source_t *show_transition3 = DuplicateSource(show_transition, show_transition2);
+	if (show_transition3 != show_transition2) {
+		obs_sceneitem_set_transition(item2, true, show_transition3);
+	}
+	obs_source_release(show_transition3);
+
+	obs_source_t *hide_transition = obs_sceneitem_get_transition(item, false);
+	obs_source_t *hide_transition2 = obs_sceneitem_get_transition(item2, false);
+	obs_source_t *hide_transition3 = DuplicateSource(hide_transition, hide_transition2);
+	if (hide_transition3 != hide_transition2) {
+		obs_sceneitem_set_transition(item2, false, hide_transition3);
+	}
+	obs_source_release(hide_transition3);
+
+	uint32_t show_transition_duration = obs_sceneitem_get_transition_duration(item, true);
+	uint32_t show_transition_duration2 = obs_sceneitem_get_transition_duration(item2, true);
+	if (show_transition_duration != show_transition_duration2)
+		obs_sceneitem_set_transition_duration(item2, true, show_transition_duration);
+
+	uint32_t hide_transition_duration = obs_sceneitem_get_transition_duration(item, false);
+	uint32_t hide_transition_duration2 = obs_sceneitem_get_transition_duration(item2, false);
+	if (hide_transition_duration != hide_transition_duration2)
+		obs_sceneitem_set_transition_duration(item2, false, hide_transition_duration);
+
+	int order_position = obs_sceneitem_get_order_position(item);
+	int order_position2 = obs_sceneitem_get_order_position(item2);
+	if (order_position != order_position2)
+		obs_sceneitem_set_order_position(item2, order_position);
+}
+
+void CanvasCloneDock::UpdateSettings(obs_data_t *s)
+{
+	if (s) {
+		obs_data_release(settings);
+		settings = s;
+	}
+
+	auto c = color_from_int(obs_data_get_int(settings, "color"));
+	setStyleSheet(QString("QFrame{border: 2px solid %1;}").arg(c.name(QColor::HexRgb)));
+
+	obs_weak_canvas_release(clone);
+	clone = nullptr;
+	auto clone_name = obs_data_get_string(settings, "clone");
+	auto clone_canvas = clone_name[0] == '\0' ? obs_get_main_canvas() : obs_get_canvas_by_name(clone_name);
+	if (clone_canvas) {
+		clone = obs_canvas_get_weak_canvas(clone_canvas);
+		obs_video_info ovi;
+		if (obs_canvas_get_video_info(clone_canvas, &ovi)) {
+			if (ovi.base_width > 0)
+				canvas_width = ovi.base_width;
+			if (ovi.base_height > 0)
+				canvas_height = ovi.base_height;
+		} else {
+			for (const auto &it : canvas_docks) {
+				if (it->GetCanvas() == clone_canvas) {
+					canvas_width = it->GetCanvasWidth();
+					canvas_height = it->GetCanvasHeight();
+				}
+			}
+			for (const auto &it : canvas_clone_docks) {
+				if (it->GetCanvas() == clone_canvas) {
+					canvas_width = it->GetCanvasWidth();
+					canvas_height = it->GetCanvasHeight();
+				}
+			}
+		}
+		obs_canvas_release(clone_canvas);
+	} else {
+		canvas_width = (uint32_t)obs_data_get_int(settings, "width");
+		canvas_height = (uint32_t)obs_data_get_int(settings, "height");
+	}
+	if (canvas_width < 1)
+		canvas_width = 1080;
+	if (canvas_height < 1)
+		canvas_height = 1920;
+
+	obs_video_info ovi;
+	if (obs_canvas_get_video_info(canvas, &ovi) && (ovi.base_width != canvas_width || ovi.base_height != canvas_height ||
+							ovi.output_width != canvas_width || ovi.output_height != canvas_height)) {
+		obs_get_video_info(&ovi);
+		ovi.base_height = canvas_height;
+		ovi.base_width = canvas_width;
+		ovi.output_height = canvas_height;
+		ovi.output_width = canvas_width;
+		obs_canvas_reset_video(canvas, &ovi);
+		blog(LOG_INFO, "[Aitum Stream Suite] Canvas '%s' reset video %ux%u", obs_canvas_get_name(canvas), canvas_width,
+		     canvas_height);
+	}
+	LoadReplacements();
+}
+
+bool CanvasCloneDock::AddSourceToCombos(void *param, obs_source_t *source)
+{
+	if (!source)
+		return true;
+	if (obs_obj_is_private(source))
+		return true;
+	auto st = obs_source_get_type(source);
+	if (st != OBS_SOURCE_TYPE_INPUT && st != OBS_SOURCE_TYPE_SCENE)
+		return true;
+	auto this_ = (CanvasCloneDock *)param;
+	auto canvas = obs_source_get_canvas(source);
+	if (canvas) {
+		auto cc = obs_weak_canvas_get_canvas(this_->clone);
+		obs_canvas_release(canvas);
+		obs_canvas_release(cc);
+		if (cc != canvas)
+			return true;
+	}
+
+	auto name = QString::fromUtf8(obs_source_get_name(source));
+	auto id = QString::fromUtf8(obs_source_get_uuid(source));
+
+	int index = 0;
+	auto combo = this_->replaceCombos[0].first;
+	while (index < combo->count() && combo->itemText(index).compare(name, Qt::CaseInsensitive) < 0)
+		index++;
+
+	for (auto it = this_->replaceCombos.begin(); it != this_->replaceCombos.end(); ++it) {
+		it->first->insertItem(index, name, id);
+		it->second->insertItem(index, name, id);
+	}
+	return true;
+}
+
+void CanvasCloneDock::LoadReplacements()
+{
+	auto clone_name = obs_data_get_string(settings, "clone");
+	auto clone_canvas = clone_name[0] == '\0' ? obs_get_main_canvas() : obs_get_canvas_by_name(clone_name);
+	pthread_mutex_lock(&replace_sources_mutex);
+	for (auto it = replace_sources.begin(); it != replace_sources.end(); it++)
+		obs_weak_source_release(it->second);
+	replace_sources.clear();
+	pthread_mutex_unlock(&replace_sources_mutex);
+	obs_data_array_t *arr = obs_data_get_array(settings, "replace_sources");
+	size_t count = obs_data_array_count(arr);
+	for (size_t i = 0; i < count; i++) {
+		obs_data_t *t = obs_data_array_item(arr, i);
+		if (!t) {
+			replaceCombos[i].first->setCurrentIndex(0);
+			replaceCombos[i].second->setCurrentIndex(0);
+			continue;
+		}
+		auto src_name = obs_data_get_string(t, "source");
+		if (i < replaceCombos.size()) {
+			if (src_name && src_name[0] != '\0')
+				replaceCombos[i].first->setCurrentText(QString::fromUtf8(src_name));
+			else
+				replaceCombos[i].first->setCurrentIndex(0);
+		}
+		auto dst_name = obs_data_get_string(t, "replacement");
+		if (i < replaceCombos.size()) {
+			if (dst_name && dst_name[0] != '\0')
+				replaceCombos[i].second->setCurrentText(QString::fromUtf8(dst_name));
+			else
+				replaceCombos[i].second->setCurrentIndex(0);
+		}
+		if (!src_name || !dst_name || src_name[0] == '\0' || dst_name[0] == '\0') {
+			obs_data_release(t);
+			continue;
+		}
+		obs_source_t *src = clone_canvas ? obs_canvas_get_source_by_name(clone_canvas, src_name) : nullptr;
+		if (!src)
+			src = obs_get_source_by_name(src_name);
+		obs_source_t *dst = clone_canvas ? obs_canvas_get_source_by_name(clone_canvas, dst_name) : nullptr;
+		if (!dst)
+			dst = obs_get_source_by_name(dst_name);
+		if (src && dst && src != dst) {
+			pthread_mutex_lock(&replace_sources_mutex);
+			replace_sources[src] = obs_source_get_weak_source(dst);
+			pthread_mutex_unlock(&replace_sources_mutex);
+		}
+		obs_source_release(src);
+		obs_source_release(dst);
+		obs_data_release(t);
+	}
+	obs_data_array_release(arr);
+	obs_canvas_release(clone_canvas);
+}
+
+void CanvasCloneDock::source_create(void *param, calldata_t *cd)
+{
+	auto source = (obs_source_t *)calldata_ptr(cd, "source");
+	AddSourceToCombos(param, source);
+}
+
+void CanvasCloneDock::source_remove(void *param, calldata_t *cd)
+{
+	auto source = (obs_source_t *)calldata_ptr(cd, "source");
+	auto this_ = (CanvasCloneDock *)param;
+	pthread_mutex_lock(&this_->replace_sources_mutex);
+	for (auto it = this_->replace_sources.begin(); it != this_->replace_sources.end();) {
+		if (it->first == source || obs_weak_source_references_source(it->second, source)) {
+			obs_weak_source_release(it->second);
+			it = this_->replace_sources.erase(it);
+		} else {
+			++it;
+		}
+	}
+	pthread_mutex_unlock(&this_->replace_sources_mutex);
+	this_->RemoveSource(QString::fromUtf8(obs_source_get_name(source)));
+}
+
+void CanvasCloneDock::source_rename(void *param, calldata_t *cd)
+{
+	auto source = (obs_source_t *)calldata_ptr(cd, "source");
+	auto this_ = (CanvasCloneDock *)param;
+	this_->RemoveSource(QString::fromUtf8(calldata_string(cd, "prev_name")));
+	AddSourceToCombos(param, source);
+}
+
+void CanvasCloneDock::RemoveSource(QString source_name)
+{
+	for (auto it = replaceCombos.begin(); it != replaceCombos.end(); ++it) {
+		int index = it->first->findText(source_name, Qt::MatchFixedString);
+		if (index >= 0)
+			it->first->removeItem(index);
+		index = it->second->findText(source_name, Qt::MatchFixedString);
+		if (index >= 0)
+			it->second->removeItem(index);
+	}
+}
+
+void CanvasCloneDock::SaveSettings(bool closing, QString mode)
+{
+	if (closing)
+		return;
+
+	auto pa = obs_data_array_create();
+	for (auto projector : projectors) {
+		auto p = obs_data_create();
+		obs_data_set_int(p, "monitor", projector->GetMonitor());
+		obs_data_set_string(p, "geometry", projector->saveGeometry().toBase64().constData());
+		if (projector->IsAlwaysOnTopOverridden())
+			obs_data_set_bool(p, "alwaysOnTop", projector->IsAlwaysOnTop());
+		obs_data_set_bool(p, "alwaysOnTopOverridden", projector->IsAlwaysOnTopOverridden());
+		obs_data_array_push_back(pa, p);
+		obs_data_release(p);
+	}
+	obs_data_set_array(settings, "projectors", pa);
+	obs_data_array_release(pa);
+
+	auto state = canvas_split->saveState();
+	auto b64 = state.toBase64();
+	auto state_chars = b64.constData();
+	if (mode.isEmpty() && modesTabBar) {
+		auto d = modesTabBar->tabData(modesTabBar->currentIndex());
+		if (!d.isNull() && d.isValid() && !d.toString().isEmpty()) {
+			mode = d.toString();
+		} else {
+			mode = modesTabBar->tabText(modesTabBar->currentIndex());
+		}
+	}
+	std::string setting_name = "canvas_split";
+	if (!mode.isEmpty())
+		setting_name += "_" + mode.toStdString();
+	obs_data_set_string(settings, setting_name.c_str(), state_chars);
+	setting_name = "canvas_split_automatic";
+	if (!mode.isEmpty())
+		setting_name += "_" + mode.toStdString();
+	obs_data_set_bool(settings, setting_name.c_str(), canvas_split->automaticSwitching);
+	setting_name = "canvas_split_horizontal";
+	if (!mode.isEmpty())
+		setting_name += "_" + mode.toStdString();
+	obs_data_set_bool(settings, setting_name.c_str(), canvas_split->orientation() == Qt::Horizontal);
+	setting_name = "canvas_split_order";
+	if (!mode.isEmpty())
+		setting_name += "_" + mode.toStdString();
+	obs_data_set_string(settings, setting_name.c_str(), canvas_split->savePanelOrder().toUtf8().constData());
+}
+
+void CanvasCloneDock::LoadMode(QString mode)
+{
+	canvas_split->blockSignals(true);
+	std::string setting_name = "canvas_split_" + mode.toStdString();
+	auto state = obs_data_get_string(settings, setting_name.c_str());
+	if (state[0] == '\0') {
+		setting_name = "canvas_split_" + mode.toLower().toStdString();
+		state = obs_data_get_string(settings, setting_name.c_str());
+	}
+	setting_name = "canvas_split_automatic_" + mode.toStdString();
+	obs_data_set_default_bool(settings, setting_name.c_str(), true);
+	canvas_split->automaticSwitching = obs_data_get_bool(settings, setting_name.c_str());
+	setting_name = "canvas_split_horizontal_" + mode.toStdString();
+	canvas_split->setOrientation(obs_data_get_bool(settings, setting_name.c_str()) ? Qt::Horizontal : Qt::Vertical);
+	setting_name = "canvas_split_order_" + mode.toStdString();
+	auto order = obs_data_get_string(settings, setting_name.c_str());
+	if (order[0] != '\0')
+		canvas_split->restorePanelOrder(QString::fromUtf8(order));
+	if (state[0] != '\0')
+		canvas_split->restoreState(QByteArray::fromBase64(state));
+	canvas_split->blockSignals(false);
+}
+
+void CanvasCloneDock::reset_live_state()
+{
+	canvas_split->setSizes({1, 0});
+}
+
+void CanvasCloneDock::reset_build_state()
+{
+	auto w = width();
+	auto h = height();
+	if (w > h) {
+		canvas_split->setSizes({w * 2 / 3, w / 3});
+	} else {
+		canvas_split->setSizes({h * 2 / 3, h / 3});
+	}
+}
+
+void CanvasCloneDock::SetPanelVisible(const QString &panel_name, bool visible)
+{
+	if (panel_name == "canvas") {
+		auto canvas_sizes = canvas_split->sizes();
+		if (canvas_sizes[0] == 0 && visible) {
+			canvas_split->setSizes({1, canvas_sizes[1] > 0 ? 1 : 0});
+		} else if (canvas_sizes[0] > 0 && !visible) {
+			canvas_split->setSizes({0, 1});
+		}
+	} else if (panel_name == "sources") {
+		auto canvas_sizes = canvas_split->sizes();
+		if (canvas_sizes[1] == 0 && visible) {
+			canvas_split->setSizes({canvas_sizes[0] > 0 ? 1 : 0, 1});
+		} else if (canvas_sizes[1] > 0 && !visible) {
+			canvas_split->setSizes({1, 0});
+		}
+	}
+}
+
+void CanvasCloneDock::DeleteProjector(OBSProjector *projector)
+{
+	for (size_t i = 0; i < projectors.size(); i++) {
+		if (projectors[i] == projector) {
+			projectors[i]->deleteLater();
+			projectors.erase(projectors.begin() + i);
+			break;
+		}
+	}
+}
+
+OBSProjector *CanvasCloneDock::OpenProjector(int monitor)
+{
+	/* seriously?  10 monitors? */
+	if (monitor > 9 || monitor > QGuiApplication::screens().size() - 1)
+		return nullptr;
+	auto config = obs_frontend_get_user_config();
+	if (!config)
+		return nullptr;
+
+	bool closeProjectors = config_get_bool(config, "BasicWindow", "CloseExistingProjectors");
+
+	if (closeProjectors && monitor > -1) {
+		for (size_t i = projectors.size(); i > 0; i--) {
+			size_t idx = i - 1;
+			if (projectors[idx]->GetMonitor() == monitor)
+				DeleteProjector(projectors[idx]);
+		}
+	}
+
+	OBSProjector *projector = new OBSProjector(canvas, nullptr, monitor, [this](OBSProjector *p) { DeleteProjector(p); });
+
+	projectors.emplace_back(projector);
+
+	return projector;
+}
+
+void CanvasCloneDock::AddProjectorMenuMonitors(QMenu *parent, QObject *target, const char *slot)
+{
+
+	QList<QScreen *> screens = QGuiApplication::screens();
+	for (int i = 0; i < screens.size(); i++) {
+		QScreen *screen = screens[i];
+		QRect screenGeometry = screen->geometry();
+		qreal ratio = screen->devicePixelRatio();
+		QString name = "";
+#if defined(_WIN32) && QT_VERSION < QT_VERSION_CHECK(6, 4, 0)
+		QTextStream fullname(&name);
+		fullname << GetMonitorName(screen->name());
+		fullname << " (";
+		fullname << (i + 1);
+		fullname << ")";
+#elif defined(__APPLE__) || defined(_WIN32)
+		name = screen->name();
+#else
+		name = screen->model().simplified();
+
+		if (name.length() > 1 && name.endsWith("-"))
+			name.chop(1);
+#endif
+		name = name.simplified();
+
+		if (name.length() == 0) {
+			name = QString("%1 %2")
+				       .arg(QString::fromUtf8(obs_frontend_get_locale_string("Display")))
+				       .arg(QString::number(i + 1));
+		}
+		QString str = QString("%1: %2x%3 @ %4,%5")
+				      .arg(name, QString::number(screenGeometry.width() * ratio),
+					   QString::number(screenGeometry.height() * ratio), QString::number(screenGeometry.x()),
+					   QString::number(screenGeometry.y()));
+
+		QAction *a = parent->addAction(str, target, slot);
+		a->setProperty("monitor", i);
+	}
+}
+
+void CanvasCloneDock::OpenPreviewProjector()
+{
+	int monitor = sender()->property("monitor").toInt();
+	OpenProjector(monitor);
+}

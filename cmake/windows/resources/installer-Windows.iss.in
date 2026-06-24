@@ -1,0 +1,246 @@
+#define MyAppName "@CMAKE_PROJECT_NAME@"
+#define MyAppVersion "@CMAKE_PROJECT_VERSION@"
+#define MyAppPublisher "@PLUGIN_AUTHOR@"
+#define MyAppURL "@PLUGIN_WEBSITE@"
+
+[Setup]
+; NOTE: The value of AppId uniquely identifies this application.
+; Do not use the same AppId value in installers for other applications.
+; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
+AppId={{@UUID_APP@}}
+AppName="Aitum Stream Suite"
+AppVersion={#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}
+AppUpdatesURL={#MyAppURL}
+DefaultDirName={code:GetDirName}
+AppendDefaultDirName=no
+DefaultGroupName="Aitum Stream Suite"
+OutputBaseFilename={#MyAppName}-{#MyAppVersion}-windows-installer
+Compression=lzma
+SolidCompression=yes
+DirExistsWarning=no
+AllowNoIcons=yes
+; Wizard Information
+WizardStyle=modern
+WizardResizable=yes
+SetupIconFile="../media/icon.ico"
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Components]
+Name: "AitumStreamSuite"; Description: "Aitum Stream Suite"; Types: full compact custom; Flags: fixed checkablealone
+Name: "AitumStreamSuite\Theme"; Description: "Aitum Stream Suite Theme"; Types: full custom
+Name: "Plugins"; Description: "featured OBS plugins"; Types: full
+Name: "Plugins\3DEffect"; Description: "3D Effect (Exeldro)"; Types: full
+Name: "Plugins\AdvancedMasks"; Description: "Advanced Masks (FiniteSingularity)"; Types: full
+Name: "Plugins\CompositeBlur"; Description: "Composite Blur (FiniteSingularity)"; Types: full
+Name: "Plugins\FreezeFilter"; Description: "Freeze Filter (Exeldro)"; Types: full
+Name: "Plugins\GradientSource"; Description: "Gradient Source (Exeldro)"; Types: full
+Name: "Plugins\Move"; Description: "Move (Exeldro)"; Types: full
+Name: "Plugins\Noise"; Description: "Noise (FiniteSingularity)"; Types: full
+Name: "Plugins\RetroEffects"; Description: "Retro Effects (FiniteSingularity)"; Types: full
+Name: "Plugins\SceneNotesDock"; Description: "Scene Notes Dock (Exeldro)"; Types: full
+Name: "Plugins\SourceClone"; Description: "Source Clone (Exeldro)"; Types: full
+Name: "Plugins\StrokeGlowShadow"; Description: "Stroke Glow Shadow (FiniteSingularity)"; Types: full
+Name: "Plugins\SVGSource"; Description: "SVG Source (FiniteSingularity)"; Types: full
+
+
+[Files]
+Source: "..\release\Package\obs-plugins\64bit\aitum-stream-suite.*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "AitumStreamSuite"
+Source: "..\release\Package\data\obs-plugins\aitum-stream-suite\locale\*"; DestDir: "{app}\data\obs-plugins\aitum-stream-suite\locale"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "AitumStreamSuite"
+Source: "..\release\Package\data\obs-studio\themes\*"; DestDir: "{app}\data\obs-studio\themes"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "AitumStreamSuite\Theme"
+
+Source: "..\release\Package\obs-plugins\64bit\3d-effect.*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\3DEffect"
+Source: "..\release\Package\data\obs-plugins\3d-effect\*"; DestDir: "{app}\data\obs-plugins\3d-effect"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\3DEffect"
+
+Source: "..\release\Package\obs-plugins\64bit\obs-advanced-masks.*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\AdvancedMasks"
+Source: "..\release\Package\data\obs-plugins\obs-advanced-masks\*"; DestDir: "{app}\data\obs-plugins\obs-advanced-masks"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\AdvancedMasks"
+
+Source: "..\release\Package\obs-plugins\64bit\obs-composite-blur.*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\CompositeBlur"
+Source: "..\release\Package\data\obs-plugins\obs-composite-blur\*"; DestDir: "{app}\data\obs-plugins\obs-composite-blur"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\CompositeBlur"
+
+Source: "..\release\Package\obs-plugins\64bit\freeze-filter.*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\FreezeFilter"
+Source: "..\release\Package\data\obs-plugins\freeze-filter\*"; DestDir: "{app}\data\obs-plugins\freeze-filter"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\FreezeFilter"
+
+Source: "..\release\Package\obs-plugins\64bit\gradient-source.*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\GradientSource"
+Source: "..\release\Package\data\obs-plugins\gradient-source\*"; DestDir: "{app}\data\obs-plugins\gradient-source"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\GradientSource"
+
+Source: "..\release\Package\obs-plugins\64bit\move-transition.*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\Move"
+Source: "..\release\Package\data\obs-plugins\move-transition\*"; DestDir: "{app}\data\obs-plugins\move-transition"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\Move"
+
+Source: "..\release\Package\obs-plugins\64bit\obs-noise.*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\Noise"
+Source: "..\release\Package\data\obs-plugins\obs-noise\*"; DestDir: "{app}\data\obs-plugins\obs-noise"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\Noise"
+
+Source: "..\release\Package\obs-plugins\64bit\obs-retro-effects.*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\RetroEffects"
+Source: "..\release\Package\data\obs-plugins\obs-retro-effects\*"; DestDir: "{app}\data\obs-plugins\obs-retro-effects"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\RetroEffects"
+
+Source: "..\release\Package\obs-plugins\64bit\scene-notes-dock.*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\SceneNotesDock"
+Source: "..\release\Package\data\obs-plugins\scene-notes-dock\*"; DestDir: "{app}\data\obs-plugins\scene-notes-dock"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\SceneNotesDock"
+
+Source: "..\release\Package\obs-plugins\64bit\source-clone.*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\SourceClone"
+Source: "..\release\Package\data\obs-plugins\source-clone\*"; DestDir: "{app}\data\obs-plugins\source-clone"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\SourceClone"
+
+Source: "..\release\Package\obs-plugins\64bit\obs-stroke-glow-shadow.*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\StrokeGlowShadow"
+Source: "..\release\Package\data\obs-plugins\obs-stroke-glow-shadow\*"; DestDir: "{app}\data\obs-plugins\obs-stroke-glow-shadow"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\StrokeGlowShadow"
+
+Source: "..\release\Package\obs-plugins\64bit\svg-source.*"; DestDir: "{app}\obs-plugins\64bit"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\SVGSource"
+Source: "..\release\Package\data\obs-plugins\svg-source\*"; DestDir: "{app}\data\obs-plugins\svg-source"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: "Plugins\SVGSource"
+
+
+Source: "..\LICENSE"; Flags: dontcopy
+; NOTE: Don't use "Flags: ignoreversion" on any shared system files
+
+[InstallDelete]
+Type: files; Name: "{app}\obs-plugins\64bit\vertical-canvas.dll"
+Type: files; Name: "{app}\obs-plugins\64bit\vertical-canvas.pdb"
+Type: files; Name: "{app}\obs-plugins\64bit\aitum-multistream.dll"
+Type: files; Name: "{app}\obs-plugins\64bit\aitum-multistream.pdb"
+
+[Ini]
+filename: {commonappdata}\obs-studio\global.ini; section: Appearance; key: Theme; string: com.obsproject.Aitum.Original; Components: "AitumStreamSuite\Theme"
+filename: {commonappdata}\obs-studio\user.ini; section: Appearance; key: Theme; string: com.obsproject.Aitum.Original; Components: "AitumStreamSuite\Theme"
+filename: {userappdata}\obs-studio\global.ini; section: Appearance; key: Theme; string: com.obsproject.Aitum.Original; Flags: createkeyifdoesntexist;  Components: "AitumStreamSuite\Theme"
+filename: {userappdata}\obs-studio\user.ini; section: Appearance; key: Theme; string: com.obsproject.Aitum.Original; Flags: createkeyifdoesntexist;  Components: "AitumStreamSuite\Theme"
+filename: {localappdata}\obs-studio\global.ini; section: Appearance; key: Theme; string: com.obsproject.Aitum.Original; Components: "AitumStreamSuite\Theme"
+filename: {localappdata}\obs-studio\user.ini; section: Appearance; key: Theme; string: com.obsproject.Aitum.Original; Components: "AitumStreamSuite\Theme"
+filename: {app}\config\obs-studio\global.ini; section: Appearance; key: Theme; string: com.obsproject.Aitum.Original; Flags: createkeyifdoesntexist; Components: "AitumStreamSuite\Theme"
+filename: {app}\config\obs-studio\user.ini; section: Appearance; key: Theme; string: com.obsproject.Aitum.Original; Flags: createkeyifdoesntexist; Components: "AitumStreamSuite\Theme"
+
+[Icons]
+Name: "{group}\{cm:ProgramOnTheWeb,{#MyAppName}}"; Filename: "{#MyAppURL}"
+Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
+
+[Code]
+
+procedure TypesComboChange(Sender: TObject);
+var
+    I: Integer;
+begin
+    for I := 0 to WizardForm.ComponentsList.Items.Count - 1 do begin
+      if (WizardForm.ComponentsList.Items[I] = '3D Effect (Exeldro)') and FileExists(ExpandConstant('{app}\obs-plugins\64bit\3d-effect.dll')) then begin
+        WizardForm.ComponentsList.Checked[I] := False;
+        WizardForm.ComponentsList.ItemEnabled[I] := False;
+      end;
+      if (WizardForm.ComponentsList.Items[I] = 'Advanced Masks (FiniteSingularity)') and FileExists(ExpandConstant('{app}\obs-plugins\64bit\obs-advanced-masks.dll')) then begin
+        WizardForm.ComponentsList.Checked[I] := False;
+        WizardForm.ComponentsList.ItemEnabled[I] := False;
+      end;
+      if (WizardForm.ComponentsList.Items[I] = 'Composite Blur (FiniteSingularity)') and FileExists(ExpandConstant('{app}\obs-plugins\64bit\obs-composite-blur.dll')) then begin
+        WizardForm.ComponentsList.Checked[I] := False;
+        WizardForm.ComponentsList.ItemEnabled[I] := False;
+      end;
+      if (WizardForm.ComponentsList.Items[I] = 'Freeze Filter (Exeldro)') and FileExists(ExpandConstant('{app}\obs-plugins\64bit\freeze-filter.dll')) then begin
+        WizardForm.ComponentsList.Checked[I] := False;
+        WizardForm.ComponentsList.ItemEnabled[I] := False;
+      end;
+      if (WizardForm.ComponentsList.Items[I] = 'Gradient Source (Exeldro)') and FileExists(ExpandConstant('{app}\obs-plugins\64bit\gradient-source.dll')) then begin
+        WizardForm.ComponentsList.Checked[I] := False;
+        WizardForm.ComponentsList.ItemEnabled[I] := False;
+      end;
+      if (WizardForm.ComponentsList.Items[I] = 'Move (Exeldro)') and FileExists(ExpandConstant('{app}\obs-plugins\64bit\move-transition.dll')) then begin
+        WizardForm.ComponentsList.Checked[I] := False;
+        WizardForm.ComponentsList.ItemEnabled[I] := False;
+      end;
+      if (WizardForm.ComponentsList.Items[I] = 'Noise (FiniteSingularity)') and FileExists(ExpandConstant('{app}\obs-plugins\64bit\obs-noise.dll')) then begin
+        WizardForm.ComponentsList.Checked[I] := False;
+        WizardForm.ComponentsList.ItemEnabled[I] := False;
+      end;
+      if (WizardForm.ComponentsList.Items[I] = 'Retro Effects (FiniteSingularity)') and FileExists(ExpandConstant('{app}\obs-plugins\64bit\obs-retro-effects.dll')) then begin
+        WizardForm.ComponentsList.Checked[I] := False;
+        WizardForm.ComponentsList.ItemEnabled[I] := False;
+      end;
+      if (WizardForm.ComponentsList.Items[I] = 'Scene Notes Dock (Exeldro)') and FileExists(ExpandConstant('{app}\obs-plugins\64bit\scene-notes-dock.dll')) then begin
+        WizardForm.ComponentsList.Checked[I] := False;
+        WizardForm.ComponentsList.ItemEnabled[I] := False;
+      end;
+      if (WizardForm.ComponentsList.Items[I] = 'Source Clone (Exeldro)') and FileExists(ExpandConstant('{app}\obs-plugins\64bit\source-clone.dll')) then begin
+        WizardForm.ComponentsList.Checked[I] := False;
+        WizardForm.ComponentsList.ItemEnabled[I] := False;
+      end;
+      if (WizardForm.ComponentsList.Items[I] = 'Stroke Glow Shadow (FiniteSingularity)') and FileExists(ExpandConstant('{app}\obs-plugins\64bit\obs-stroke-glow-shadow.dll')) then begin
+        WizardForm.ComponentsList.Checked[I] := False;
+        WizardForm.ComponentsList.ItemEnabled[I] := False;
+      end;
+      if (WizardForm.ComponentsList.Items[I] = 'SVG Source (FiniteSingularity)') and FileExists(ExpandConstant('{app}\obs-plugins\64bit\svg-source.dll')) then begin
+        WizardForm.ComponentsList.Checked[I] := False;
+        WizardForm.ComponentsList.ItemEnabled[I] := False;
+      end;
+    end;
+end;
+
+procedure InitializeWizard();
+var
+  GPLText: AnsiString;
+  Page: TOutputMsgMemoWizardPage;
+begin
+  ExtractTemporaryFile('LICENSE');
+  LoadStringFromFile(ExpandConstant('{tmp}\LICENSE'), GPLText);
+  Page := CreateOutputMsgMemoPage(wpWelcome,
+    'License Information', 'Please review the license terms before installing {#MyAppName}',
+    'Press Page Down to see the rest of the agreement. Once you are aware of your rights, click Next to continue.',
+    String(GPLText)
+  );
+  WizardForm.TypesCombo.OnChange := @TypesComboChange;
+end;
+
+// credit where it's due :
+// following function come from https://github.com/Xaymar/obs-studio_amf-encoder-plugin/blob/master/%23Resources/Installer.in.iss#L45
+function GetDirName(Value: string): string;
+var
+  InstallPath: string;
+begin
+  // initialize default path, which will be returned when the following registry
+  // key queries fail due to missing keys or for some different reason
+  Result := ExpandConstant('{pf}\obs-studio');
+  // query the first registry value; if this succeeds, return the obtained value
+  if RegQueryStringValue(HKLM32, 'SOFTWARE\OBS Studio', '', InstallPath) then
+    Result := InstallPath;
+  if RegQueryStringValue(HKLM64, 'SOFTWARE\OBS Studio', '', InstallPath) then
+    Result := InstallPath;
+end;
+
+/////////////////////////////////////////////////////////////////////
+function NextButtonClick(PageId: Integer): Boolean;
+var
+    ObsFileName: string;
+    ObsMS, ObsLS: Cardinal;
+    ObsMajorVersion, ObsMinorVersion: Cardinal;
+begin
+    Result := True;
+    if not (PageId = wpSelectDir) then begin
+        exit;
+    end;
+    ObsFileName := ExpandConstant('{app}\bin\64bit\obs64.exe');
+    if not FileExists(ObsFileName) then begin
+        MsgBox('OBS Studio (bin\64bit\obs64.exe) does not seem to be installed in that folder.  Please select the correct folder.', mbError, MB_OK);
+        Result := False;
+        exit;
+    end;
+    Result := GetVersionNumbers(ObsFileName, ObsMS, ObsLS);
+    if not Result then begin
+        MsgBox('Failed to read version from OBS Studio (bin\64bit\obs64.exe).', mbError, MB_OK);
+        Result := False;
+        exit;
+    end;
+    { shift 16 bits to the right to get major version }
+    ObsMajorVersion := ObsMS shr 16; 
+    { select only low 16 bits }
+    ObsMinorVersion := ObsMS and $FFFF;
+    if ObsMajorVersion < 31 then begin
+        MsgBox('Version of OBS Studio (bin\64bit\obs64.exe) is lower than the version 31 required.', mbError, MB_OK);
+        Result := False;
+        exit;
+    end;
+    TypesComboChange(nil);
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+    if CurPageID = wpSelectComponents then begin
+        TypesComboChange(nil);
+        exit;
+    end;
+end;
