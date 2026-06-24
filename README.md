@@ -7,6 +7,8 @@ OBS Studio plugin providing per-output stream management, forked from [Aitum Str
 - **OBS Studio 31.1.0 or newer**
 - **A free Streamlabs account** that's connected to a TikTok account eligible for live streaming
 
+![Streamlabs TikTok setup page](media/screenshots/streamlabs-tiktok-setup.png)
+
 ## What This Does
 
 - **Log in with Streamlabs** — authenticates right from OBS using your browser

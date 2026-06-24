@@ -1301,10 +1301,15 @@ QWidget *StreamOutputDialog::WizardInfoStreamlabsTikTok(bool edit)
 
 	configPage->setLayout(configLayout);
 
+	// Use a QStackedWidget to switch between auth and config
+	auto stack = new QStackedWidget;
+	stack->addWidget(authPage);
+	stack->addWidget(configPage);
+	stack->setCurrentIndex(0);
+
 	// Initial visibility
 	if (edit && !outputStreamlabsToken.isEmpty()) {
-		authPage->hide();
-		configPage->show();
+		stack->setCurrentIndex(1);
 		usernameLabel->setText(outputTitle.isEmpty() ? QString::fromUtf8("Logged in") : outputTitle);
 		statusLabel->setText(QString::fromUtf8("Ready"));
 		loginButton->setText(QString::fromUtf8("Logged in"));
@@ -1330,16 +1335,7 @@ QWidget *StreamOutputDialog::WizardInfoStreamlabsTikTok(bool edit)
 				}
 			});
 		}
-	} else {
-		authPage->show();
-		configPage->hide();
 	}
-
-	// Use a QStackedWidget to switch between auth and config
-	auto stack = new QStackedWidget;
-	stack->addWidget(authPage);
-	stack->addWidget(configPage);
-	stack->setCurrentIndex(0);
 
 	connect(loginButton, &QPushButton::clicked, [this, loginButton, confirmBtn = confirmButton,
 						    usernameLabel, statusLabel, titleField,
